@@ -16,19 +16,15 @@ import { useEffect } from "react";
 const Chart = () => {
   useEffect(() => {
     const startConnection = async () => {
-    const connection = new HubConnectionBuilder()
-      .withUrl("http://localhost:5049/hubs/refresh")
-      .withAutomaticReconnect()
-      .build();
+      const connection = new HubConnectionBuilder()
+        .withUrl("http://localhost:5049/hubs/refresh")
+        .withAutomaticReconnect()
+        .build();
       await connection.start();
       return connection;
-    }
+    };
     const connection = startConnection();
 
-    
-
-
-    
     const CONFIG = {
       timeDomain: 5000,
       channels: 1,
@@ -195,57 +191,48 @@ const Chart = () => {
       });
     };
 
-    // Push random test data in
-    (() => {
-      let tLast = performance.now();
-      let dModulus = 0;
-      let yNext = 0;
-      const pushData = () => {
-        const tNow = performance.now();
-        const tDelta = Math.min(tNow - tLast, 2000); // if tab is inactive for more than 2 seconds, prevent adding crazy amounts of data in attempt to catch up.
-        let pointsToAdd = (tDelta * CONFIG.sampleRate) / 1000 + dModulus;
-        dModulus = pointsToAdd % 1;
-        pointsToAdd = Math.floor(pointsToAdd);
+    if (connection) {
+      // Push random test data in
+      (() => {
+        let tLast = performance.now();
+        let dModulus = 0;
+        let yNext = 0;
 
-        const newDataForAllChannels = new Array(CONFIG.channels)
-          .fill(0)
-          .map((_) => []);
-        for (let i = 0; i < pointsToAdd; i += 1) {
-          const x = tLast + ((i + 1) / pointsToAdd) * tDelta;
-          const y = yNext;
-          yNext = (yNext + 1) % 10000;
-          const sample = { x, y };
-          // NOTE: For testing purposes same data is used for every channel. This shouldn't impose any performance differences, since generating test data is only extra work that is not needed in real application.
-          for (let ch = 0; ch < CONFIG.channels; ch += 1) {
-            newDataForAllChannels[ch].push(sample);
+        connection.on("message", (yValues) => {
+          if (!Array.isArray(yValues)) {
+            console.error("Received message is not an array");
+            return;
           }
-        }
-        handleIncomingData(newDataForAllChannels);
 
-        tLast = tNow;
-        // NOTE: In normal cases, this would happen 60 times per second (depends on monitor). If app starts to lag, then it will happen less frequently.
-        requestAnimationFrame(pushData);
-      };
-      requestAnimationFrame(pushData);
-    })();
+          const tNow = performance.now();
+          const tDelta = Math.min(tNow - tLast, 2000);
 
-    // Measure FPS
-    (() => {
-      let frames = 0;
-      let tPrevUpdate = performance.now();
-      const _updt = () => {
-        frames += 1;
-        const tNow = performance.now();
-        if (tNow - tPrevUpdate > 5000) {
-          const fps = 1000 / ((tNow - tPrevUpdate) / frames);
-          console.log("fps", fps.toFixed(1), "\n\n");
-          frames = 0;
-          tPrevUpdate = tNow;
-        }
-        requestAnimationFrame(_updt);
-      };
-      _updt();
-    })();
+          let pointsToAdd = yValues.length;
+          dModulus = pointsToAdd % 1;
+          pointsToAdd = Math.floor(pointsToAdd);
+
+          const newDataForAllChannels = new Array(CONFIG.channels)
+            .fill(0)
+            .map((_) => []);
+          for (let i = 0; i < pointsToAdd; i += 1) {
+            const x = tLast + ((i + 1) / pointsToAdd) * tDelta;
+            const y = yValues[i] || yNext;
+            yNext = yValues[i] || yNext || 0; // Increment yNext for the next iteration, although you might want to modify this behavior
+            const sample = { x, y };
+
+            // Pushing the same data for every channel
+            for (let ch = 0; ch < CONFIG.channels; ch += 1) {
+              newDataForAllChannels[ch].push(sample);
+            }
+          }
+
+          console.log("newDataForAllChannels: ", newDataForAllChannels);
+          handleIncomingData(newDataForAllChannels);
+
+          tLast = tNow;
+        });
+      })();
+    }
   }, []);
 
   return <div>Chart</div>;
